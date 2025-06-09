@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformers import PreTrainedTokenizerBase
 
 import config as C
 from modeling.language_model import LanguageModel
@@ -13,45 +14,37 @@ def run_validation(
     val_loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    tokenizer: PreTrainedTokenizerBase,
 ) -> float:
     """
-    Performs end-to-end validation of the NoProp-LM model on a given validation set.
+    Performs end-to-end validation of the NoProp-LM model.
 
     This function evaluates the model by running the complete denoising chain.
     For each batch in the validation loader:
-    1. Clean embeddings for input and label sequences are obtained.
-       Padding tokens in labels are mapped to a valid token (e.g., 0) before embedding
-       as they are masked out during loss calculation anyway.
-    2. An initial noise tensor is created, matching the shape of the target label embeddings.
-    3. This noise is iteratively passed through all denoising blocks of the model.
-       The input to each block is the sum of the clean input embeddings (context) and
-       the (partially) denoised embeddings from the previous block.
-    4. The final output from the last denoising block is taken as the predicted embeddings.
-    5. The loss (typically MSE) is calculated between these predicted embeddings and the
-       clean label embeddings.
-    6. The loss is masked to exclude positions corresponding to padding tokens in the labels.
+    1. Clean embeddings for inputs (src) and labels (tgt) are obtained.
+    2. An initial noise tensor is created, matching the shape of the target embeddings.
+    3. Padding masks are created for both the src and tgt sequences.
+    4. The noisy tensor is iteratively passed through all denoising blocks. In each step,
+       the block's encoder processes the clean `src` embeddings, and its decoder
+       processes the current (partially) denoised `tgt` embeddings.
+    5. The final output from the last block is taken as the predicted embeddings.
+    6. A masked MSE loss is calculated between predicted and clean label embeddings.
     7. The average loss across all batches is computed and returned.
-
-    The model is moved to the specified `device` for validation and set to `eval()` mode.
-    After validation, it's moved back to "cpu" (except for the embedding table, which
-    remains on `device`) and set back to `train()` mode.
 
     Args:
         model (LanguageModel): The NoProp-LM model to be validated.
-        val_loader (DataLoader): DataLoader providing the validation data. Each batch
-            should be a dictionary containing 'input_ids' and 'labels'.
-        criterion (nn.Module): The loss function (e.g., `nn.MSELoss(reduction='none')`)
-            used to compare predicted embeddings with target embeddings.
-        device (torch.device): The device (e.g., 'cuda', 'cpu') on which to perform
-            validation.
+        val_loader (DataLoader): DataLoader providing the validation data.
+        criterion (nn.Module): The loss function (e.g., `nn.MSELoss(reduction='none')`).
+        device (torch.device): The device on which to perform validation.
+        tokenizer (PreTrainedTokenizerBase): The tokenizer, required to get the
+            `pad_token_id` for creating the source padding mask.
 
     Returns:
         float: The average validation loss over the entire validation dataset.
-               Returns 0.0 if the validation loader is empty.
     """
     print("\n--- Running End-to-End Validation ---")
     model.to(device)  # Move the entire model (including all blocks) to the device
-    model.eval()      # Set the model to evaluation mode
+    model.eval()  # Set the model to evaluation mode
 
     total_loss = 0.0  # Accumulator for the total loss over all batches
 
@@ -75,8 +68,13 @@ def run_validation(
             # before embedding, as these positions will be masked out in the loss later.
             # This prevents errors if IGNORE_INDEX is out of vocab range.
             clean_label_embeddings = model.get_clean_embedding(
-                labels.masked_fill(labels == C.IGNORE_INDEX, 0) # Use 0 or any valid token_id
+                labels.masked_fill(
+                    labels == C.IGNORE_INDEX, 0
+                )  # Use 0 or any valid token_id
             )
+
+            src_padding_mask = input_ids == tokenizer.pad_token_id
+            tgt_padding_mask = labels == C.IGNORE_INDEX
 
         # Initialize the starting point for the denoising chain: pure Gaussian noise.
         # This tensor has the same shape as the target (clean_label_embeddings).
@@ -84,17 +82,16 @@ def run_validation(
 
         # Run the full denoising chain: pass through each denoising block sequentially.
         # The blocks are ordered from most noisy (largest sigma) to least noisy (smallest sigma).
-        for block_idx, block in enumerate(model.denoising_blocks):
-            # The input to each denoising block is the sum of:
-            #   1. The clean embeddings of the input sequence (context).
-            #   2. The (partially) denoised embeddings from the output of the previous block.
-            # This sum represents the noisy input at the current step of the denoising process.
-            block_input_embeddings = (
-                clean_input_embeddings + current_denoised_embeddings
-            )
-            # Pass the noisy input through the current denoising block.
+        for block in model.denoising_blocks:
+            # Pass clean context to the encoder (src) and the current state of the
+            # denoised embeddings to the decoder (tgt).
             # The block predicts a "cleaner" version of the embeddings.
-            current_denoised_embeddings = block(block_input_embeddings)
+            current_denoised_embeddings = block(
+                src_embeds=clean_input_embeddings,
+                tgt_embeds=current_denoised_embeddings,
+                src_padding_mask=src_padding_mask,
+                tgt_padding_mask=tgt_padding_mask,
+            )
 
         # After iterating through all blocks, `current_denoised_embeddings` holds the
         # final predicted embeddings for the label sequence.
@@ -107,7 +104,9 @@ def run_validation(
         # Create a mask to ignore padded positions in the loss calculation.
         # `labels != C.IGNORE_INDEX` creates a boolean mask (True for non-padding).
         # `unsqueeze(-1)` expands the mask to match the embedding dimension.
-        loss_mask = (labels != C.IGNORE_INDEX).unsqueeze(-1).float() # Ensure float for multiplication
+        loss_mask = (
+            (labels != C.IGNORE_INDEX).unsqueeze(-1).float()
+        )  # Ensure float for multiplication
 
         # Apply the mask: multiply element-wise loss by the mask.
         # Padded positions will have their loss component zeroed out.
@@ -117,7 +116,7 @@ def run_validation(
         # Sum of masked losses divided by the number of non-padded elements.
         # Add a small epsilon (1e-8) to prevent division by zero if a batch is all padding.
         batch_loss = masked_loss.sum() / (loss_mask.sum() + 1e-8)
-        total_loss += batch_loss.item() # Accumulate batch loss
+        total_loss += batch_loss.item()  # Accumulate batch loss
 
         # Update the progress bar with the current batch's validation loss
         progress_bar.set_postfix(Val_Loss=f"{batch_loss.item():.4f}")
