@@ -15,40 +15,24 @@ from modeling.language_model import LanguageModel
 def get_alpha_squared_from_cosine_schedule(block_idx: int, config: C) -> float:
     """
     Calculates the alpha_squared value for a given block index based on a
-    cosine noise schedule. alpha_squared represents the proportion of signal
-    (clean embedding) in the noisy embedding at a particular denoising step.
+    cosine noise schedule.
 
-    The schedule maps block indices (from 0 to NUM_DENOISING_BLOCKS-1)
-    to a value between nearly 1 (mostly signal, for later blocks/less noise)
-    and nearly 0 (mostly noise, for earlier blocks/more noise).
-
-    If block_idx < 0 (e.g., for the initial clean state), alpha_squared is 1.0.
-
-    Args:
-        block_idx (int): The index of the current DenoisingBlock being trained.
-                         Ranges from 0 to NUM_DENOISING_BLOCKS - 1.
-        config (C): The global configuration object, used to get NUM_DENOISING_BLOCKS.
-
-    Returns:
-        float: The calculated alpha_squared value for the given block index.
-               This value is between 0 and 1.
+    This schedule is **reversed** for training. Block 0, which is processed first
+    during inference and sees the most noise, is trained with the highest noise
+    (lowest alpha_squared). The final block is trained with the lowest noise.
     """
-    if (
-        block_idx < 0
-    ):  # Corresponds to the initial clean state (t=0 in paper's notation)
+    if block_idx < 0:
         return 1.0
 
     total_blocks = config.NUM_DENOISING_BLOCKS
-    # `t_paper` corresponds to t in the original paper's formulation (1 to T)
-    # Our block_idx is 0 to T-1. So, t_paper = block_idx + 1.
-    t_paper = block_idx + 1
 
-    # Ratio of current step t to total steps T
+    # --- THIS IS THE FIX ---
+    # We map the block index to the noise schedule in reverse.
+    # block_idx = 0  -> should have MOST noise -> corresponds to the END of the schedule (t_paper = T)
+    # block_idx = N-1 -> should have LEAST noise -> corresponds to the START of the schedule (t_paper = 1)
+    t_paper = total_blocks - block_idx
+
     t_ratio = t_paper / total_blocks
-
-    # Cosine schedule as defined in some diffusion model papers: cos^2(t/T * pi/2)
-    # This results in alpha_squared decreasing from 1 (at t=0, though here t_paper starts at 1)
-    # towards 0 (at t=T).
     return math.cos(t_ratio * math.pi / 2) ** 2
 
 
