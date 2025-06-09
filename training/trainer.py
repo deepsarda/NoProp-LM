@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -9,8 +10,6 @@ from tqdm import tqdm
 
 import config as C
 from modeling.language_model import LanguageModel
-
-from types import Optional
 
 
 def get_alpha_squared_from_cosine_schedule(block_idx: int, config: C) -> float:
