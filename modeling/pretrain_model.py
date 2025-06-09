@@ -71,16 +71,16 @@ class MLMPretrainModel(nn.Module):
         # Parameters are sourced from the global config `C`.
         # `batch_first=True` means input/output tensors are (batch, seq, feature).
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=config.BLOCK_DIM, # Dimensionality of embeddings
-            nhead=config.BLOCK_NHEAD, # Number of attention heads
-            dim_feedforward=config.BLOCK_DIM_FEEDFORWARD, # Dim of feed-forward network
-            dropout=config.BLOCK_DROPOUT_RATE, # Dropout rate
-            activation="gelu", # Activation function
+            d_model=config.BLOCK_DIM,  # Dimensionality of embeddings
+            nhead=config.BLOCK_NHEAD,  # Number of attention heads
+            dim_feedforward=config.BLOCK_DIM_FEEDFORWARD,  # Dim of feed-forward network
+            dropout=config.BLOCK_DROPOUT_RATE,  # Dropout rate
+            activation="gelu",  # Activation function
             batch_first=True,  # Input format: (batch, seq_len, embedding_dim)
         )
         # Stack multiple encoder layers to form the full Transformer Encoder.
         self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=config.BLOCK_NUM_ENCODER_LAYERS
+            encoder_layer, num_layers=config.BLOCK_NUM_PRETRAIN_LAYERS
         )
 
         # Language Model Head: A linear layer that maps the Transformer's output
@@ -107,24 +107,28 @@ class MLMPretrainModel(nn.Module):
         seq_len = input_ids.size(1)
 
         # 1. Get token embeddings for the input IDs.
-        token_embeds = self.token_embedder(input_ids) # Shape: (B, SeqLen, EmbDim)
+        token_embeds = self.token_embedder(input_ids)  # Shape: (B, SeqLen, EmbDim)
 
         # 2. Get positional embeddings for the sequence.
         # We use the pre-registered `position_ids` buffer, sliced to the current `seq_len`.
-        pos_embeds = self.position_embedder(self.position_ids[:, :seq_len]) # Shape: (B, SeqLen, EmbDim)
+        pos_embeds = self.position_embedder(
+            self.position_ids[:, :seq_len]
+        )  # Shape: (B, SeqLen, EmbDim)
 
         # 3. Combine token and positional embeddings, then apply LayerNorm and Dropout.
         embeddings = token_embeds + pos_embeds
         embeddings = self.layernorm(embeddings)
-        embeddings = self.dropout(embeddings) # Shape: (B, SeqLen, EmbDim)
+        embeddings = self.dropout(embeddings)  # Shape: (B, SeqLen, EmbDim)
 
         # 4. Pass the combined embeddings through the Transformer Encoder.
         # The encoder processes the sequence, allowing tokens to interact via self-attention.
         # Causal masking is NOT used here, as MLM allows bidirectional context.
-        encoder_output = self.transformer_encoder(embeddings) # Shape: (B, SeqLen, EmbDim)
+        encoder_output = self.transformer_encoder(
+            embeddings
+        )  # Shape: (B, SeqLen, EmbDim)
 
         # 5. Pass the Transformer's output through the LM head to get logits.
         # This projects the embeddings back into the vocabulary space.
-        logits = self.lm_head(encoder_output) # Shape: (B, SeqLen, VocabSize)
+        logits = self.lm_head(encoder_output)  # Shape: (B, SeqLen, VocabSize)
 
         return logits
