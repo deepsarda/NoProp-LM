@@ -231,9 +231,7 @@ def run_training_loop(
                         }
                     )
                 total_loss_block += loss.item()  # Accumulate loss for averaging.
-                progress_bar.set_postfix(
-                    Loss=f"{loss.item():.4f}", BLOCK_IDX=f"{block_idx}"
-                )
+                progress_bar.set_postfix(Loss=f"{loss.item():.4f}")
 
                 global_step += 1  # Increment global training step count.
 
@@ -289,15 +287,25 @@ def run_training_loop(
         if val_loader:
             # Perform end-to-end validation using the provided validation_fn.
             # The validation_fn is responsible for moving model parts to the device.
-            avg_val_loss = validation_fn(
+            validation_results = validation_fn(
                 model, val_loader, criterion, device, tokenizer
             )  # Note: criterion here is MSELoss
+
+            avg_val_loss = validation_results["overall_loss"]
             print(
                 f"\nEpoch {epoch + 1} | End-to-End Validation MSE Loss: {avg_val_loss:.6f}"
             )
             epoch_log["validation/epoch_loss"] = (
                 avg_val_loss  # Log overall validation loss for the epoch.
             )
+
+            # Log loss for each individual block
+            for i, block_loss in enumerate(validation_results["block_losses"]):
+                log_key = f"validation/block_{i}_loss"
+                epoch_log[log_key] = block_loss
+                print(
+                    f"Epoch {epoch + 1} | Block {i} Validation MSE Loss: {block_loss:.6f}"
+                )
 
         # Log all accumulated epoch metrics to W&B.
         if wandb_run:

@@ -15,7 +15,7 @@ def run_validation(
     criterion: nn.Module,
     device: torch.device,
     tokenizer: PreTrainedTokenizerBase,
-) -> float:
+) -> dict:
     """
     Performs end-to-end validation of the NoProp-LM model.
 
@@ -25,8 +25,8 @@ def run_validation(
     2. An initial noise tensor is created, matching the shape of the target embeddings.
     3. Padding masks are created for both the src and tgt sequences.
     4. The noisy tensor is iteratively passed through all denoising blocks. In each step,
-       the block's encoder processes the clean `src` embeddings, and its decoder
-       processes the current (partially) denoised `tgt` embeddings.
+        the block's encoder processes the clean `src` embeddings, and its decoder
+        processes the current (partially) denoised `tgt` embeddings.
     5. The final output from the last block is taken as the predicted embeddings.
     6. A masked MSE loss is calculated between predicted and clean label embeddings.
     7. The average loss across all batches is computed and returned.
@@ -40,13 +40,17 @@ def run_validation(
             `pad_token_id` for creating the source padding mask.
 
     Returns:
-        float: The average validation loss over the entire validation dataset.
+        dict: A dictionary containing 'overall_loss' (float) for the average
+              validation loss, and 'block_losses' (list of floats) where each
+              element is the average loss after that specific block in the chain.
     """
     print("\n--- Running End-to-End Validation ---")
     model.to(device)  # Move the entire model (including all blocks) to the device
     model.eval()  # Set the model to evaluation mode
 
-    total_loss = 0.0  # Accumulator for the total loss over all batches
+    total_loss = 0.0  # Accumulator for the total overall loss over all batches
+    # Accumulators for loss after each block
+    block_losses_accumulators = [0.0] * len(model.denoising_blocks)
 
     # Initialize tqdm progress bar for visual feedback
     progress_bar = tqdm(val_loader, desc="Validating", leave=False, dynamic_ncols=True)
@@ -82,7 +86,7 @@ def run_validation(
 
         # Run the full denoising chain: pass through each denoising block sequentially.
         # The blocks are ordered from most noisy (largest sigma) to least noisy (smallest sigma).
-        for block in model.denoising_blocks:
+        for i, block in enumerate(model.denoising_blocks):
             # Pass clean context to the encoder (src) and the current state of the
             # denoised embeddings to the decoder (tgt).
             # The block predicts a "cleaner" version of the embeddings.
@@ -93,11 +97,22 @@ def run_validation(
                 tgt_padding_mask=tgt_padding_mask,
             )
 
+            # Calculate loss after *each* block and accumulate it
+            loss_per_block = criterion(
+                current_denoised_embeddings, clean_label_embeddings
+            )
+            loss_mask = (labels != C.IGNORE_INDEX).unsqueeze(-1).float()
+            masked_loss_per_block = loss_per_block * loss_mask
+            batch_loss_per_block = masked_loss_per_block.sum() / (
+                loss_mask.sum() + 1e-8
+            )
+            block_losses_accumulators[i] += batch_loss_per_block.item()
+
         # After iterating through all blocks, `current_denoised_embeddings` holds the
         # final predicted embeddings for the label sequence.
         final_predicted_embeddings = current_denoised_embeddings
 
-        # Calculate the loss (e.g., MSE) between the final predicted embeddings
+        # Calculate the overall loss (e.g., MSE) between the final predicted embeddings
         # and the clean target label embeddings. `reduction='none'` keeps per-element losses.
         loss = criterion(final_predicted_embeddings, clean_label_embeddings)
 
@@ -116,9 +131,9 @@ def run_validation(
         # Sum of masked losses divided by the number of non-padded elements.
         # Add a small epsilon (1e-8) to prevent division by zero if a batch is all padding.
         batch_loss = masked_loss.sum() / (loss_mask.sum() + 1e-8)
-        total_loss += batch_loss.item()  # Accumulate batch loss
+        total_loss += batch_loss.item()  # Accumulate overall batch loss
 
-        # Update the progress bar with the current batch's validation loss
+        # Update the progress bar with the current batch's overall validation loss
         progress_bar.set_postfix(Val_Loss=f"{batch_loss.item():.4f}")
 
     # After validation, restore model state for training:
@@ -129,5 +144,12 @@ def run_validation(
     model.train()  # Set the model back to training mode (enables dropout, etc.)
 
     # Calculate the average validation loss over all batches.
-    # Handle case where val_loader might be empty to prevent division by zero.
-    return total_loss / len(val_loader) if len(val_loader) > 0 else 0.0
+    num_batches = (
+        len(val_loader) if len(val_loader) > 0 else 1
+    )  # Avoid division by zero
+    avg_overall_loss = total_loss / num_batches
+
+    # Calculate average loss for each block
+    avg_block_losses = [l / num_batches for l in block_losses_accumulators]
+
+    return {"overall_loss": avg_overall_loss, "block_losses": avg_block_losses}
