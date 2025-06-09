@@ -1,4 +1,6 @@
-from typing import Any, Dict, Optional 
+from typing import Any, Dict, Optional
+
+import torch.nn as nn
 import wandb
 
 from modeling.language_model import LanguageModel
@@ -34,10 +36,7 @@ def get_config_dict(config_module: Any) -> Dict[str, Any]:
 
 
 def init_wandb_run(
-    config_module: Any,
-    project_name: str,
-    run_name: str,
-    job_type: str
+    config_module: Any, project_name: str, run_name: str, job_type: str
 ) -> Optional[wandb.sdk.wandb_run.Run]:
     """
     Initializes and starts a new Weights & Biases run.
@@ -66,13 +65,15 @@ def init_wandb_run(
     try:
         # Initialize W&B run
         run = wandb.init(
-            project=project_name,        # Target W&B project
-            name=run_name,               # Name of the run
-            config=get_config_dict(config_module), # Log configuration parameters
-            job_type=job_type,           # Type of job (e.g., 'train', 'eval')
-            reinit=True,                 # Allows reinitializing W&B in the same process (useful for notebooks)
+            project=project_name,  # Target W&B project
+            name=run_name,  # Name of the run
+            config=get_config_dict(config_module),  # Log configuration parameters
+            job_type=job_type,  # Type of job (e.g., 'train', 'eval')
+            reinit=True,  # Allows reinitializing W&B in the same process (useful for notebooks)
         )
-        print(f"W&B run '{run.name}' initialized successfully in project '{project_name}'. Job type: '{job_type}'.")
+        print(
+            f"W&B run '{run.name}' initialized successfully in project '{project_name}'. Job type: '{job_type}'."
+        )
         return run
     except Exception as e:
         # Catch any errors during W&B initialization (e.g., network issues, API key problems)
@@ -80,7 +81,9 @@ def init_wandb_run(
         return None
 
 
-def log_model_parameters(model: nn.Module, wandb_run: Optional[wandb.sdk.wandb_run.Run]):
+def log_model_parameters(
+    model: nn.Module, wandb_run: Optional[wandb.sdk.wandb_run.Run]
+):
     """
     Logs the total and trainable parameter counts of a PyTorch model to an active
     Weights & Biases run.
@@ -94,7 +97,7 @@ def log_model_parameters(model: nn.Module, wandb_run: Optional[wandb.sdk.wandb_r
         wandb_run (Optional[wandb.sdk.wandb_run.Run]): The active W&B run object.
             If `None`, the function does nothing.
     """
-    if not wandb_run: # Do nothing if W&B run is not initialized
+    if not wandb_run:  # Do nothing if W&B run is not initialized
         return
 
     # Calculate total number of parameters in the model
@@ -111,12 +114,16 @@ def log_model_parameters(model: nn.Module, wandb_run: Optional[wandb.sdk.wandb_r
 
     # If the model is the specific NoProp LanguageModel, log block-specific parameters
     if isinstance(model, LanguageModel):
-        if model.denoising_blocks: # Check if there are any denoising blocks
+        if model.denoising_blocks:  # Check if there are any denoising blocks
             # Calculate parameters for the first denoising block (assuming all are identical)
-            block_params = sum(p.numel() for p in model.denoising_blocks[0].parameters())
+            block_params = sum(
+                p.numel() for p in model.denoising_blocks[0].parameters()
+            )
             print(f"Each Denoising Block has parameters: {block_params:,}")
             total_params_all_blocks = block_params * len(model.denoising_blocks)
-            print(f"Total parameters in all Denoising Blocks: {total_params_all_blocks:,}")
+            print(
+                f"Total parameters in all Denoising Blocks: {total_params_all_blocks:,}"
+            )
 
             wandb_run.config.update(
                 {
