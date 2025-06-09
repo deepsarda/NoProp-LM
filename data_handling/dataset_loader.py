@@ -1,8 +1,3 @@
-"""
-This file provides functionality for loading and tokenizing datasets
-from the Hugging Face `datasets` library. It includes filtering
-short sequences and handling potential issues during dataset loading.
-"""
 from typing import Optional, Union
 
 from datasets import Dataset, load_dataset
@@ -23,10 +18,6 @@ def load_tokenized_dataset(
     """
     Loads a dataset from the Hugging Face Hub, filters it based on text length,
     and then tokenizes it.
-
-    The function handles potential errors during dataset loading, including a specific
-    fallback for 'wikitext-103-raw-v1' validation split by attempting to load
-    'wikitext-2-raw-v1' instead.
 
     Args:
         tokenizer (PreTrainedTokenizerBase): The tokenizer instance to use for tokenizing
@@ -63,25 +54,6 @@ def load_tokenized_dataset(
         print(
             f"Error loading dataset {dataset_name} with config {dataset_config_name} for split {split}: {e}"
         )
-        # Specific fallback for wikitext-103-raw-v1 validation split
-        if (
-            dataset_name == "wikitext"
-            and dataset_config_name == "wikitext-103-raw-v1"
-            and split == "validation"
-        ):
-            print(
-                "Attempting to load wikitext-2 for validation as a fallback for wikitext-103-raw-v1 validation."
-            )
-            try:
-                # Attempt to load the fallback dataset configuration
-                raw_dataset = load_dataset(
-                    dataset_name, "wikitext-2-raw-v1", split="validation"
-                )
-            except Exception as e2:
-                print(f"Fallback dataset loading failed: {e2}")
-                return None # Return None if fallback also fails
-        else:
-            return None # Return None for other loading errors
 
     # Check if the dataset is empty after initial loading
     if not raw_dataset or len(raw_dataset) == 0:
@@ -130,11 +102,11 @@ def load_tokenized_dataset(
     # `load_from_cache_file=True` enables caching of the tokenized dataset.
     tokenized_dataset = filtered_dataset.map(
         tokenize_function,
-        batched=True, # Process examples in batches
-        remove_columns=raw_dataset.column_names, # Remove original columns to save space
-        num_proc=num_preprocessing_workers, # Number of processes for tokenization
-        load_from_cache_file=True, # Use cached results if available
-        desc=f"Tokenizing {split} split", # Description for progress bar
+        batched=True, 
+        remove_columns=raw_dataset.column_names,
+        num_proc=num_preprocessing_workers,
+        load_from_cache_file=True,
+        desc=f"Tokenizing {split} split",
     )
 
     # Check if the dataset is empty after tokenization

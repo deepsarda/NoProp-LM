@@ -1,9 +1,3 @@
-"""
-This file defines the main LanguageModel class for the NoProp-LM.
-The LanguageModel acts as a container for the token embedding table and
-a list of DenoisingBlock modules. It manages loading pretrained embeddings
-and provides methods for accessing embeddings and model parameters.
-"""
 from typing import List
 
 import torch

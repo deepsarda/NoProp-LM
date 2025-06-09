@@ -1,8 +1,3 @@
-"""
-This file provides general helper functions that can be used across
-various parts of the NoProp-LM project. Currently, it includes a function
-for setting random seeds to ensure reproducibility.
-"""
 import os
 import random
 
@@ -43,11 +38,5 @@ def set_seed(seed_value: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed_value) # Seed for current GPU
         torch.cuda.manual_seed_all(seed_value)  # Seed for all GPUs if using multi-GPU setup
-
-        # Configure cuDNN for deterministic behavior
-        # Using deterministic algorithms can have a performance impact.
-        torch.backends.cudnn.deterministic = True
-        # Disabling benchmark mode ensures cuDNN doesn't pick potentially non-deterministic algorithms.
-        torch.backends.cudnn.benchmark = False
 
     print(f"Global random seed set to {seed_value}")

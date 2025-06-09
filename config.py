@@ -1,17 +1,9 @@
-"""
-This file holds all configurations for the NoProp-LM project.
-It is organized into sections for clarity and ease of modification.
-"""
-
 # -----------------------------------------------------------------------------
 # WandB & Experiment Tracking Configuration
 # -----------------------------------------------------------------------------
-# This section contains configurations for Weights & Biases,
-# which is used for experiment tracking and visualization.
-WANDB_PROJECT_NAME = "NOPROP-LM-TRAIN"  # Project name for the main training runs
-WANDB_PRETRAIN_PROJECT_NAME = "NOPROP-LM-PRETRAIN"  # Separate project for embedding pretraining
-WANDB_RUN_NAME = "noprop_lm_run"  # Default run name for main training
-WANDB_PRETRAIN_RUN_NAME = "embedding_pretrain_run" # Default run name for pretraining
+WANDB_PROJECT_NAME = "NOPROP-LM"  # Project name for the main training runs
+WANDB_RUN_NAME = "train_run"  # Default run name for main training
+WANDB_PRETRAIN_RUN_NAME = "pretrain_run" # Default run name for pretraining
 SEED = 42  # Random seed for reproducibility
 
 
@@ -22,7 +14,7 @@ SEED = 42  # Random seed for reproducibility
 # Pretraining aims to create meaningful embeddings before the main NoProp training.
 DO_PRETRAINING = True  # Master switch to enable or disable the pretraining phase
 PRETRAINING_EPOCHS = 1  # Number of epochs for pretraining
-PRETRAINING_LR = 3e-3  # Learning rate for pretraining
+PRETRAINING_LR = 1e-3  # Learning rate for pretraining
 PRETRAINING_BATCH_SIZE = 640  # Batch size for pretraining
 PRETRAINING_MASK_PROB = 0.15  # Probability of masking tokens during pretraining (similar to BERT MLM)
 PRETRAINED_EMBEDDING_FILE = "pretrained_embeddings.pt"  # File to save/load pretrained embeddings
@@ -62,13 +54,12 @@ IGNORE_INDEX = -100  # Index to ignore in loss calculation (typically for paddin
 # -----------------------------------------------------------------------------
 # This section contains parameters for the main NoProp training phase.
 EPOCHS = 3  # Number of epochs for NoProp training
-BATCH_SIZE = 640  # Batch size for NoProp training
-LEARNING_RATE = 5e-4  # Learning rate for NoProp training
+BATCH_SIZE = 1280  # Batch size for NoProp training
+LEARNING_RATE = 1e-4  # Learning rate for NoProp training
 FP16_ENABLED = True  # Enable mixed-precision training (uses NVIDIA's AMP)
 GRAD_CLIP_VALUE = 1.0  # Value for gradient clipping to prevent exploding gradients
 ADAM_BETAS = (0.9, 0.98)  # Beta parameters for the Adam optimizer
 ADAM_EPS = 1e-5  # Epsilon parameter for the Adam optimizer
-
 DATALOADER_NUM_WORKERS_TRAIN = 4 # Number of worker processes for the training DataLoader
 
 # -----------------------------------------------------------------------------

@@ -1,9 +1,3 @@
-"""
-This file contains the function for performing end-to-end validation of the NoProp-LM model.
-Validation involves running the full denoising chain on the validation dataset
-and calculating the loss between the model's final predicted embeddings and the
-clean target embeddings.
-"""
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader

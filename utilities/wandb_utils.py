@@ -1,23 +1,7 @@
-"""
-This file provides utility functions for integrating with Weights & Biases (W&B)
-for experiment tracking. It includes functions to:
-- Convert a configuration module/object into a dictionary suitable for W&B.
-- Initialize a W&B run with specified project, run name, config, and job type.
-- Log model parameter counts (total, trainable, and block-specific for NoProp-LM)
-  to an active W&B run.
-"""
-from typing import Any, Dict, Optional # Added Optional for type hinting
-
+from typing import Any, Dict, Optional 
 import wandb
-# It's good practice to import specific types if you use them for type hinting
-# e.g., from wandb.sdk.wandb_run import Run as WandbRun
-# For now, using 'Any' or 'wandb.Run' if it's a known type by the linter.
 
-# Assuming LanguageModel might be imported for isinstance check, ensure it's available
-# from ..modeling.language_model import LanguageModel # Example of relative import
-# For this exercise, we'll assume it's correctly imported if used.
-
-from modeling.language_model import LanguageModel # Ensure this import is correct based on project structure
+from modeling.language_model import LanguageModel
 
 
 def get_config_dict(config_module: Any) -> Dict[str, Any]:
@@ -54,7 +38,7 @@ def init_wandb_run(
     project_name: str,
     run_name: str,
     job_type: str
-) -> Optional[wandb.sdk.wandb_run.Run]: # More specific type hint for W&B Run object
+) -> Optional[wandb.sdk.wandb_run.Run]:
     """
     Initializes and starts a new Weights & Biases run.
 

@@ -1,9 +1,3 @@
-"""
-This file defines the `MLMPretrainModel`, a Transformer-based model specifically
-designed for Masked Language Model (MLM) pretraining. The primary goal of this
-model is to learn high-quality token embeddings. These learned embeddings can then
-be extracted and used to initialize the embedding table of the main NoProp-LM model.
-"""
 import torch
 import torch.nn as nn
 

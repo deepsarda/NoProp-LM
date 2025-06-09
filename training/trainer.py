@@ -1,13 +1,3 @@
-"""
-This file contains the main training loop for the NoProp-LM (Phase 2),
-along with utility functions related to noise scheduling (cosine schedule)
-and Signal-to-Noise Ratio (SNR) calculation.
-
-The `run_training_loop` function orchestrates the iterative training of each
-DenoisingBlock in the LanguageModel. It handles data loading, noise injection,
-loss calculation, backpropagation, optimization, and logging.
-It also triggers validation and text generation at specified intervals.
-"""
 import math
 
 import torch
@@ -59,33 +49,16 @@ def get_alpha_squared_from_cosine_schedule(block_idx: int, config: C) -> float:
     return math.cos(t_ratio * math.pi / 2) ** 2
 
 
-def get_snr(alpha_squared: float) -> float:
-    """
-    Calculates the Signal-to-Noise Ratio (SNR) given alpha_squared.
-    alpha_squared is the variance of the signal (clean data) in the noisy input,
-    and (1 - alpha_squared) is the variance of the noise.
-    SNR = Var(signal) / Var(noise).
-
-    Args:
-        alpha_squared (float): The proportion of signal variance.
-
-    Returns:
-        float: The Signal-to-Noise Ratio. A small epsilon is added to the
-               denominator to prevent division by zero if alpha_squared is 1.0.
-    """
-    return alpha_squared / (1.0 - alpha_squared + 1e-8) # Add epsilon for numerical stability
-
-
 def run_training_loop(
     config: C,
     model: LanguageModel,
-    tokenizer, # Type hint can be PreTrainedTokenizerBase if imported
+    tokenizer,
     train_loader: DataLoader,
     val_loader: Optional[DataLoader], # val_loader can be None
     device: torch.device,
-    generator_fn, # Type hint can be Callable if defined
-    validation_fn, # Type hint can be Callable if defined
-    wandb_run, # Type hint can be wandb.sdk.wandb_run.Run if imported
+    generator_fn, 
+    validation_fn, 
+    wandb_run, 
 ):
     """
     Runs the main NoProp-LM training loop (Phase 2).
@@ -106,7 +79,6 @@ def run_training_loop(
             denoised label embeddings.
         e.  A masked Mean Squared Error (MSE) loss is calculated between the
             block's predictions and the original clean label embeddings.
-            The loss is weighted based on the SNR of the current block.
         f.  Gradients are computed, and the optimizer updates the block's parameters.
     4.  After training a block, it's moved to the CPU to free GPU memory.
     5.  Periodically (controlled by `config.LOG_GENERATION_EVERY_N_STEPS`), text
@@ -168,12 +140,7 @@ def run_training_loop(
             # Determine noise level and loss weighting for the current block.
             # `alpha_sq_current` is the signal variance (cosine schedule).
             alpha_sq_current = get_alpha_squared_from_cosine_schedule(block_idx, config)
-            # `snr_current` is the Signal-to-Noise Ratio.
-            snr_current = get_snr(alpha_sq_current)
-            # `loss_weight` is based on SNR, giving more weight to noisier steps
-            # (earlier blocks in the chain) as per some diffusion model training schemes.
-            loss_weight = 1.0 + (1.0 / snr_current)
-
+           
             for batch_num, batch in enumerate(progress_bar):
                 # Move batch data (input_ids, labels) to the training device.
                 input_ids = batch["input_ids"].to(device, non_blocking=True)
@@ -234,12 +201,9 @@ def run_training_loop(
                     loss_mask = (labels != config.IGNORE_INDEX).unsqueeze(-1).float()
                     # Apply mask: zero out loss for padded positions.
                     masked_loss = unweighted_loss * loss_mask
-
-                    # Apply SNR-based weighting to the masked loss.
-                    weighted_loss = masked_loss * loss_weight
                     # Calculate final batch loss: sum of weighted losses divided by number of non-padded tokens.
                     # Add epsilon to denominator to prevent division by zero.
-                    loss = weighted_loss.sum() / (loss_mask.sum() + 1e-8)
+                    loss = masked_loss.sum() / (loss_mask.sum() + 1e-8)
 
                 # Backpropagation using the gradient scaler.
                 scaler.scale(loss).backward()
@@ -257,13 +221,13 @@ def run_training_loop(
                 # Log training loss to W&B.
                 if wandb_run:
                     wandb_run.log(
-                        {"train/loss_step": loss.item(), # Log step-wise loss
+                        {"train/loss": loss.item(),
                          "train/block_idx": block_idx,
                          "train/epoch": epoch,
                          "global_step": global_step}
                     )
                 total_loss_block += loss.item() # Accumulate loss for averaging.
-                progress_bar.set_postfix(Loss=f"{loss.item():.4f}", SNR_Weight=f"{loss_weight:.2f}")
+                progress_bar.set_postfix(Loss=f"{loss.item():.4f}", BLOCK_IDX=f"{block_idx}")
 
                 global_step += 1 # Increment global training step count.
 
@@ -291,7 +255,7 @@ def run_training_loop(
                     # Note: Logging a growing table repeatedly can be resource-intensive for W&B.
                     # Consider alternative logging strategies for very long runs.
                     wandb_run.log(
-                        {f"generations/samples_block_{block_idx}_step_{global_step}": gen_table}
+                        {f"generations/samples": gen_table}
                     )
                     # Ensure the current_block is back on the training device and in train mode
                     # as generator_fn might change its state or device.

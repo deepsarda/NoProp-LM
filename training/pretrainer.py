@@ -1,9 +1,3 @@
-"""
-This file contains the logic for the first phase of training: pretraining
-the global token embedding table using a Masked Language Model (MLM) objective.
-The `MLMPretrainModel` is used for this phase. After pretraining, the learned
-embedding weights are saved to be loaded by the main NoProp-LM.
-"""
 import gc
 
 import torch
@@ -54,7 +48,7 @@ def run_embedding_pretraining(
 
     # Initialize Weights & Biases run for pretraining, if configured
     pretrain_run = init_wandb_run(
-        config, C.WANDB_PRETRAIN_PROJECT_NAME, C.WANDB_PRETRAIN_RUN_NAME, "pretraining"
+        config, C.WANDB_PROJECT_NAME, C.WANDB_PRETRAIN_RUN_NAME, "pretraining"
     )
 
     vocab_size = len(tokenizer)

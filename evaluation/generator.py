@@ -1,9 +1,3 @@
-"""
-This file contains functions for generating text sequences using a trained NoProp-LM model.
-It includes a core `generate_text` function that iteratively predicts tokens
-by running a denoising chain for each new token, and a helper function
-`find_nearest_token` to map predicted embeddings back to token IDs.
-"""
 from typing import Optional
 
 import torch
@@ -149,7 +143,7 @@ def generate_text(
                 break
 
             # Append the predicted token ID to the context for the next generation step.
-            # `unsqueeze(0)` adds batch dimension if `next_token_id` is scalar.
+            # `unsqueeze(0)` adds batch dimension as `next_token_id` is scalar.
             context_ids = torch.cat([context_ids, next_token_id.unsqueeze(0)], dim=1)
 
         # Decode all collected token IDs (prompt + generated) back to text.

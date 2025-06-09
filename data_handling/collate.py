@@ -1,8 +1,3 @@
-"""
-This file defines the custom collate function used for preparing batches
-for the NoProp-LM model. The collate function handles the transformation
-of tokenized sequences into input_ids and labels suitable for language modeling.
-"""
 from typing import Dict, List
 
 import torch

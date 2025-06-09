@@ -1,8 +1,3 @@
-"""
-This file defines the `DenoisingBlock` module, a core component of the NoProp-LM.
-Each DenoisingBlock is essentially a Transformer Encoder that processes a sequence
-of embeddings to predict a "cleaner" version of those embeddings.
-"""
 import torch
 import torch.nn as nn
 
@@ -71,12 +66,6 @@ class DenoisingBlock(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=config.BLOCK_NUM_ENCODER_LAYERS
         )
-
-        # Note: The causal mask is handled internally by nn.TransformerEncoder
-        # when `is_causal=True` is passed to its forward method.
-        # A manually registered buffer for `causal_mask` is not strictly needed here
-        # if relying on `is_causal=True`.
-        # self.register_buffer("causal_mask", torch.empty(0)) # Kept for potential future use or clarity
 
     def forward(
         self,

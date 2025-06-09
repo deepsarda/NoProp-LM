@@ -1,11 +1,3 @@
-"""
-Main entry point for training the NoProp-LM model.
-
-This script orchestrates the entire training pipeline, including:
-1. Optional embedding pretraining.
-2. Main NoProp-LM training.
-3. Model saving and logging.
-"""
 import torch
 import wandb
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
