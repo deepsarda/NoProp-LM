@@ -7,6 +7,7 @@ from transformers import PreTrainedTokenizerBase
 
 import config as C
 from modeling.language_model import LanguageModel
+from utilities.helpers import get_ddpm_schedule
 
 
 def find_nearest_token(
@@ -86,6 +87,13 @@ def generate_text(
     model.to(device)  # Move the entire model to the specified device
     model.eval()  # Set the model to evaluation mode (disables dropout, etc.)
 
+    # Get the pre-computed noise schedule
+    T = len(model.denoising_blocks)
+    schedule = get_ddpm_schedule(T, config, device)
+    posterior_mean_coef1 = schedule["posterior_mean_coef1"]
+    posterior_mean_coef2 = schedule["posterior_mean_coef2"]
+    posterior_variance = schedule["posterior_variance"]
+
     for prompt in prompts:
         print(f"\nPrompt: '{prompt}'")
         # Encode the initial prompt into token IDs
@@ -95,41 +103,44 @@ def generate_text(
             add_special_tokens=False,  # `pt` for PyTorch tensors
         ).to(device)
 
-        # Generate tokens one by one up to the maximum output length
+        # Generate tokens one by one up to the max output length
         for _ in range(config.GENERATION_MAX_OUTPUT_LENGTH):
-            # Ensure the context for the next token prediction does not exceed MAX_SEQ_LENGTH
-            # Takes the most recent `config.MAX_SEQ_LENGTH` tokens as context.
+            # Take the most recent tokens as context
             current_context_ids = context_ids[:, -config.MAX_SEQ_LENGTH :]
-
-            # --- Denoising chain for predicting the single next token ---
-            # 1. Get clean (noise-free) embeddings + padding masks for the current context tokens.
-            # These embeddings act as conditioning for the denoising process.
             clean_context_embeddings = model.get_clean_embedding(current_context_ids)
-            # The source padding mask corresponds to the context tokens.
             src_padding_mask = current_context_ids == tokenizer.pad_token_id
-            # The target sequence has length 1 and is never padded.
+            # The target to be generated is a single token, so no padding mask needed
             tgt_padding_mask = torch.zeros((1, 1), dtype=torch.bool, device=device)
 
-            # 2. Initialize a random noise vector for the token we want to predict.
-            # This represents the initial "fully noisy" state of the target token's embedding.
-            # Shape: (batch_size=1, num_tokens_to_predict=1, embedding_dim)
-            initial_noise = torch.randn(1, 1, config.EMBEDDING_DIM, device=device)
+            # Denoising chain for predicting the single next token
+            # 1. Initialize with pure Gaussian noise (z_T)
+            current_embedding = torch.randn(1, 1, config.EMBEDDING_DIM, device=device)
+            final_embedding = None
 
-            # 3. Iteratively denoise the `initial_noise` using the model's denoising blocks.
-            current_denoised_embedding = initial_noise
-            for block in model.denoising_blocks:
-                # The block's encoder gets the clean context, and its decoder gets the
-                # current (partially denoised) state of the target token's embedding.
-                current_denoised_embedding = block(
+            # 2. Iterate FORWARDS through blocks (backwards in diffusion time)
+            for block_idx, block in enumerate(model.denoising_blocks):
+                # Predict the original clean embedding from the current noisy one
+                predicted_clean_embedding = block(
                     src_embeds=clean_context_embeddings,
-                    tgt_embeds=current_denoised_embedding,
+                    tgt_embeds=current_embedding,
                     src_padding_mask=src_padding_mask,
                     tgt_padding_mask=tgt_padding_mask,
                 )
 
-            # 4. The `current_denoised_embedding` is the final prediction. Squeeze
-            # to remove the sequence length dimension (which is 1).
-            final_embedding = current_denoised_embedding.squeeze(1)
+                # 3. Sample the next, less noisy embedding `z_{t-1}`
+                if block_idx < T - 1:
+                    posterior_mean = (
+                        posterior_mean_coef1[block_idx] * current_embedding
+                        + posterior_mean_coef2[block_idx] * predicted_clean_embedding
+                    )
+                    noise = torch.randn_like(current_embedding)
+                    current_embedding = (
+                        posterior_mean
+                        + torch.sqrt(posterior_variance[block_idx]) * noise
+                    )
+                else:
+                    # 4. This is the final block, its prediction is our result
+                    final_embedding = predicted_clean_embedding.squeeze(1)
 
             # 5. Find the closest token in the vocabulary.
             next_token_id = find_nearest_token(final_embedding, model.embedding_table)

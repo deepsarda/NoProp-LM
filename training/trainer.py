@@ -10,30 +10,7 @@ from tqdm import tqdm
 
 import config as C
 from modeling.language_model import LanguageModel
-
-
-def get_alpha_squared_from_cosine_schedule(block_idx: int, config: C) -> float:
-    """
-    Calculates the alpha_squared value for a given block index based on a
-    cosine noise schedule.
-
-    This schedule is **reversed** for training. Block 0, which is processed first
-    during inference and sees the most noise, is trained with the highest noise
-    (lowest alpha_squared). The final block is trained with the lowest noise.
-    """
-    if block_idx < 0:
-        return 1.0
-
-    total_blocks = config.NUM_DENOISING_BLOCKS
-
-    # --- THIS IS THE FIX ---
-    # We map the block index to the noise schedule in reverse.
-    # block_idx = 0  -> should have MOST noise -> corresponds to the END of the schedule (t_paper = T)
-    # block_idx = N-1 -> should have LEAST noise -> corresponds to the START of the schedule (t_paper = 1)
-    t_paper = total_blocks - block_idx
-
-    t_ratio = t_paper / total_blocks
-    return math.cos(t_ratio * math.pi / 2) ** 2
+from utilities.helpers import get_alpha_squared_from_cosine_schedule
 
 
 def run_training_loop(
@@ -41,7 +18,7 @@ def run_training_loop(
     model: LanguageModel,
     tokenizer,
     train_loader: DataLoader,
-    val_loader: Optional[DataLoader],  # val_loader can be None
+    val_loader: Optional[DataLoader],
     device: torch.device,
     generator_fn,
     validation_fn,
@@ -133,7 +110,7 @@ def run_training_loop(
 
                 optimizer.zero_grad()  # Clear gradients from previous step.
 
-                # --- Prepare embeddings and inject noise (all within torch.no_grad()) ---
+                # Prepare embeddings and inject noise
                 with torch.no_grad():  # No gradients needed for these operations.
                     # Get clean (original) embeddings for input_ids from the frozen embedding table.
                     clean_input_embeddings = model.get_clean_embedding(input_ids)
@@ -272,7 +249,7 @@ def run_training_loop(
             # Perform end-to-end validation using the provided validation_fn.
             # The validation_fn is responsible for moving model parts to the device.
             validation_results = validation_fn(
-                model, val_loader, criterion, device, tokenizer
+                model, val_loader, criterion, device, tokenizer, config
             )  # Note: criterion here is MSELoss
 
             avg_val_loss = validation_results["overall_loss"]
