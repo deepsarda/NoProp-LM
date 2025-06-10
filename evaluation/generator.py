@@ -154,7 +154,9 @@ def generate_text(
             context_ids = torch.cat([context_ids, next_token_id.unsqueeze(0)], dim=1)
 
         # Decode all collected token IDs (prompt + generated) back to text.
-        generated_text = tokenizer.decode(context_ids.squeeze(0).tolist())
+        generated_text = tokenizer.decode(
+            context_ids.squeeze(0).tolist(), skip_special_tokens=True
+        )
         print(f"Generated: {generated_text}")
 
         # Log to Weights & Biases table if provided
