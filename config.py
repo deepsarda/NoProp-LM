@@ -43,10 +43,6 @@ BLOCK_DIM_FEEDFORWARD = (
 BLOCK_DROPOUT_RATE = 0.1  # Dropout rate used within blocks
 LAYER_NORM_EPS = 1e-5  # Epsilon for layer normalization to prevent division by zero
 
-NOISE_SCHEDULE_TYPE = (
-    "cosine"  # Type of noise schedule to use (e.g., "cosine", "linear")
-)
-
 # -----------------------------------------------------------------------------
 # Dataset & Tokenization Configuration
 # -----------------------------------------------------------------------------

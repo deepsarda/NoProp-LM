@@ -96,11 +96,15 @@ def get_ddpm_schedule(
     # Clamping to avoid instability from alphas_squared[0] being near zero.
     posterior_variance[0] = betas[0]
 
+    # `posterior_mean_coef1` is used for the current noisy embedding (x_t).
+    # `posterior_mean_coef2` is used for the predicted clean embedding (x_0).
+    # Coefficient for x_t (current noisy embedding)
     posterior_mean_coef1 = (
-        betas * torch.sqrt(alphas_squared_prev) / (1.0 - alphas_squared)
-    )
-    posterior_mean_coef2 = (
         (1.0 - alphas_squared_prev) * torch.sqrt(alphas) / (1.0 - alphas_squared)
+    )
+    # Coefficient for x_0 (predicted clean embedding)
+    posterior_mean_coef2 = (
+        betas * torch.sqrt(alphas_squared_prev) / (1.0 - alphas_squared)
     )
 
     return {
