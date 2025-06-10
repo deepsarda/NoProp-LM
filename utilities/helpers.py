@@ -88,10 +88,12 @@ def get_ddpm_schedule(
         [torch.tensor([1.0], device=device), alphas_squared[:-1]]
     )
 
-    alphas = alphas_squared / alphas_squared_prev
+    alphas = alphas_squared / (alphas_squared_prev + 1e-8)
     betas = 1.0 - alphas
 
-    posterior_variance = betas * (1.0 - alphas_squared_prev) / (1.0 - alphas_squared)
+    posterior_variance = (
+        betas * (1.0 - alphas_squared_prev) / (1.0 - alphas_squared + 1e-8)
+    )
     # The variance for the first block (highest noise) should be handled carefully.
     # Clamping to avoid instability from alphas_squared[0] being near zero.
     posterior_variance[0] = betas[0]
@@ -100,11 +102,11 @@ def get_ddpm_schedule(
     # `posterior_mean_coef2` is used for the predicted clean embedding (x_0).
     # Coefficient for x_t (current noisy embedding)
     posterior_mean_coef1 = (
-        (1.0 - alphas_squared_prev) * torch.sqrt(alphas) / (1.0 - alphas_squared)
+        (1.0 - alphas_squared_prev) * torch.sqrt(alphas) / (1.0 - alphas_squared + 1e-8)
     )
     # Coefficient for x_0 (predicted clean embedding)
     posterior_mean_coef2 = (
-        betas * torch.sqrt(alphas_squared_prev) / (1.0 - alphas_squared)
+        betas * torch.sqrt(alphas_squared_prev) / (1.0 - alphas_squared + 1e-8)
     )
 
     return {
