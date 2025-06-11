@@ -99,7 +99,7 @@ def run_training_loop(
             # `alpha_sq_current` is the signal variance (cosine schedule).
             alpha_sq_current = get_alpha_squared_from_cosine_schedule(block_idx, config)
 
-            for batch_num, batch in enumerate(progress_bar):
+            for batch in progress_bar:
                 # Move batch data (input_ids, labels) to the training device.
                 input_ids = batch["input_ids"].to(device, non_blocking=True)
                 labels = batch["labels"].to(device, non_blocking=True)
@@ -124,39 +124,52 @@ def run_training_loop(
                     valid_labels[labels == config.IGNORE_INDEX] = tokenizer.pad_token_id
                     clean_label_embeddings = model.get_clean_embedding(valid_labels)
 
-                    # Calculate signal and noise components for noising the label embeddings.
-                    signal_strength = math.sqrt(alpha_sq_current)
-                    noise_strength = math.sqrt(1.0 - alpha_sq_current)
-                    # Generate Gaussian noise with the same shape as clean_label_embeddings.
+                    # Determine noise level `sigma` for the current block
+                    alpha_sq_current = get_alpha_squared_from_cosine_schedule(
+                        block_idx, config
+                    )
+                    sigma_current = math.sqrt(1.0 - alpha_sq_current)
+
+                    # Generate noise and create the noisy embeddings (x_t)
                     noise = torch.randn_like(clean_label_embeddings)
-                    # Create noisy label embeddings: `sqrt(alpha^2)*clean + sqrt(1-alpha^2)*noise`.
                     noisy_label_embeddings = (
-                        clean_label_embeddings * signal_strength
-                    ) + (noise * noise_strength)
+                        clean_label_embeddings * math.sqrt(alpha_sq_current)
+                    ) + (noise * sigma_current)
+
+                    # We assume sigma_data = 1.0 because our clean_embeddings are normalized
+                    sigma_sq = sigma_current**2
+                    c_skip = 1.0 / (sigma_sq + 1.0)
+                    c_out = sigma_current / math.sqrt(sigma_sq + 1.0)
+                    c_in = 1.0 / math.sqrt(sigma_sq + 1.0)
 
                     # Source padding mask for the encoder. True where input_ids is a pad token.
                     src_padding_mask = input_ids == tokenizer.pad_token_id
                     # Target padding mask for the decoder. True where labels is the ignore_index.
                     tgt_padding_mask = labels == config.IGNORE_INDEX
 
-                # --- Forward pass, loss calculation, and backward pass ---
                 # Use Automatic Mixed Precision (AMP) if enabled.
                 with torch.amp.autocast(
                     device_type=device.type, enabled=config.FP16_ENABLED
                 ):
-                    # Forward pass through the current DenoisingBlock.
-                    # It predicts the denoised version of the label embeddings.
-                    predicted_denoised_embeddings = current_block(
+
+                    # 1. Scale the input before passing to the network
+                    network_input = noisy_label_embeddings * c_in
+
+                    # 2. Get the correction from the DenoisingBlock
+                    network_output = current_block(
                         src_embeds=clean_input_embeddings,
-                        tgt_embeds=noisy_label_embeddings,
+                        tgt_embeds=network_input,  # Use the scaled input
                         src_padding_mask=src_padding_mask,
                         tgt_padding_mask=tgt_padding_mask,
                     )
 
-                    # Calculate unweighted MSE loss between prediction and original clean labels.
-                    unweighted_loss = criterion(
-                        predicted_denoised_embeddings, clean_label_embeddings
+                    # 3. Combine skip connection and network output to form the final prediction
+                    predicted_x0 = (noisy_label_embeddings * c_skip) + (
+                        network_output * c_out
                     )
+
+                    # 4. The loss is now the MSE between the predicted x0 and the true clean x0
+                    unweighted_loss = criterion(predicted_x0, clean_label_embeddings)
 
                     # Create a mask to ignore padded positions in the loss.
                     # `labels != config.IGNORE_INDEX` is True for non-padded tokens.

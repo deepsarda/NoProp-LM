@@ -2,6 +2,7 @@ from typing import List, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 import config as C
 from modeling.denoising_block import DenoisingBlock
@@ -91,7 +92,10 @@ class LanguageModel(nn.Module):
         Returns:
             torch.Tensor: A tensor containing the corresponding embeddings.
         """
-        return self.embedding_table(token_ids)
+        raw_embeddings = self.embedding_table(token_ids)
+        # L2-normalize the embeddings along the feature dimension
+        normalized_embeddings = F.normalize(raw_embeddings, p=2, dim=-1)
+        return normalized_embeddings
 
     def get_parameters_for_block(self, block_idx: int) -> List[torch.nn.Parameter]:
         """

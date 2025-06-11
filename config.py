@@ -33,8 +33,7 @@ EMBEDDING_DIM = 384  # Dimensionality of token embeddings
 # Configuration for each individual denoising block
 BLOCK_DIM = EMBEDDING_DIM  # Input/output dimension of each block (usually same as EMBEDDING_DIM)
 BLOCK_NHEAD = 4  # Number of attention heads in each block's multi-head attention layer
-BLOCK_NUM_ENCODER_LAYERS = 1  # Number of transformer encoder layers within each block
-BLOCK_NUM_DECODER_LAYERS = 1  # Number of transformer decoder layers within each block
+BLOCK_NUM_DECODER_LAYERS = 2  # Number of transformer decoder layers within each block
 BLOCK_NUM_PRETRAIN_LAYERS = 3  # Number of pretraining layers
 BLOCK_DIM_FEEDFORWARD = (
     BLOCK_DIM * 7 // 2
